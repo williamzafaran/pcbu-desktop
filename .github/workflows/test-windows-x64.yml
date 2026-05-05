@@ -1,0 +1,48 @@
+name: Test Build (Windows x64)
+
+on:
+  workflow_dispatch:
+
+env:
+  QT_VERSION: 6.10.2
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install Qt x64
+        uses: jurplel/install-qt-action@v4
+        with:
+          dir: "C:/"
+          version: "${{env.QT_VERSION}}"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+          cache: "true"
+          cache-key-prefix: "qt-x64"
+
+      - name: vcpkg build x64
+        uses: johnwason/vcpkg-action@v7
+        with:
+          pkgs: openssl
+          triplet: x64-windows-static
+          token: ${{github.token}}
+          cache-key: "vcpkg-x64"
+
+      - name: Build x64
+        shell: bash
+        run: cd pkg && chmod +x build-desktop.sh && ARCH=x64 QT_BASE_DIR=C:/Qt/${{env.QT_VERSION}} ./build-desktop.sh
+        env:
+          VCPKG_ROOT: ${{github.workspace}}/vcpkg
+          OSTYPE: msys
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PCBioUnlock-Setup-x64
+          path: pkg/build/PCBioUnlock-Setup-x64.exe
+          retention-days: 7
