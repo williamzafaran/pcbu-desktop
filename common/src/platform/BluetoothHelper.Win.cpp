@@ -69,13 +69,24 @@ bool BluetoothHelper::PairDevice(const BluetoothDevice &device) {
   sscanf_s(device.address.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &deviceAddress.rgBytes[5], &deviceAddress.rgBytes[4], &deviceAddress.rgBytes[3],
            &deviceAddress.rgBytes[2], &deviceAddress.rgBytes[1], &deviceAddress.rgBytes[0]);
 
-  BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams = {sizeof(searchParams), TRUE, FALSE, TRUE, TRUE, TRUE, 5, nullptr};
-  HANDLE searchHandle = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
+  // fIssueInquiry=FALSE: avoid radio scan (prevents error 10108 when other BT
+  // devices are connected). fReturnRemembered=TRUE: find phones that are known
+  // but not currently discoverable (screen off, background mode).
+  BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams = {sizeof(searchParams),
+    TRUE,  // fReturnAuthenticated
+    TRUE,  // fReturnRemembered  ← was FALSE, missed screen-off phones
+    TRUE,  // fReturnUnknown
+    TRUE,  // fReturnConnected
+    FALSE, // fIssueInquiry     ← was TRUE, caused radio contention
+    0,
+    nullptr};
+  HBLUETOOTH_DEVICE_FIND searchHandle = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
   if(!searchHandle) {
     spdlog::error("Error getting bluetooth search handle. (Code={})", GetLastError());
     return false;
   }
   bool deviceFound = false;
+  bool alreadyAuthenticated = false;
   do {
     char devAddr[18]{};
     char targetAddr[18]{};
@@ -83,6 +94,7 @@ bool BluetoothHelper::PairDevice(const BluetoothDevice &device) {
     ba2str(deviceAddress.ullLong, targetAddr);
     if(strcmp(devAddr, targetAddr) == 0) {
       deviceFound = true;
+      alreadyAuthenticated = deviceInfo.fAuthenticated;
       break;
     }
   } while(BluetoothFindNextDevice(searchHandle, &deviceInfo));
@@ -90,6 +102,14 @@ bool BluetoothHelper::PairDevice(const BluetoothDevice &device) {
   if(!deviceFound) {
     spdlog::error("Bluetooth device not found.");
     return false;
+  }
+
+  // If already paired at the OS level, skip authentication — calling
+  // BluetoothAuthenticateDevice on an already-authenticated device returns
+  // an error and was the direct cause of the "pairing failed" dialog.
+  if(alreadyAuthenticated) {
+    spdlog::info("Bluetooth device is already authenticated, skipping OS pairing.");
+    return true;
   }
 
   HWND hwnd = FindWindowA(nullptr, "PC Bio Unlock");
