@@ -52,8 +52,10 @@ void BTUnlockClient::ConnectThread() {
   spdlog::info("Connecting via BT...");
 
 #ifdef WINDOWS
-  // NOTE: Must match the GUID registered in BluetoothHelper::RegisterSDPService
-  GUID guid = {0x62182bf7, 0x97c8, 0x45f9, {0xaa, 0x2c, 0x53, 0xc5, 0xf2, 0x00, 0x8b, 0xe0}};
+  // UUID of the RFCOMM service advertised by the phone app.
+  // NOTE: Different from RegisterSDPService's UUID (0xe0) which is the
+  // desktop's own service that the phone connects to during pairing.
+  GUID guid = {0x62182bf7, 0x97c8, 0x45f9, {0xaa, 0x2c, 0x53, 0xc5, 0xf2, 0x00, 0x8b, 0xdf}};
   BTH_ADDR addr;
   BluetoothHelper::str2ba(m_DeviceAddress.c_str(), &addr);
 
