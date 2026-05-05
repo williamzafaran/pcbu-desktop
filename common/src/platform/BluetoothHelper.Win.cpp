@@ -22,77 +22,44 @@ void BluetoothHelper::StartScan() {}
 void BluetoothHelper::StopScan() {}
 
 std::vector<BluetoothDevice> BluetoothHelper::ScanDevices() {
-  WSADATA data;
-  int result = WSAStartup(MAKEWORD(2, 2), &data);
-  if(result != 0) {
-    spdlog::error("WSAStartup() failed. (Code={})", result);
-    return {};
-  }
+  // Use the Win32 Radio Manager cache API (BluetoothFindFirstDevice) with
+  // fIssueInquiry=FALSE so we never trigger a physical radio scan.
+  // This avoids WSALookupServiceBeginW + LUP_FLUSHCACHE which returns error
+  // 10108 (WSASERVICE_NOT_FOUND) whenever another BT device (mouse, headset,
+  // controller) is actively using the radio, and which also never sees modern
+  // phones whose screens are off (iOS/Android suppress Classic BT beacons).
+  BLUETOOTH_DEVICE_SEARCH_PARAMS params{};
+  params.dwSize = sizeof(params);
+  params.fReturnAuthenticated = TRUE; // paired + authenticated devices
+  params.fReturnRemembered    = TRUE; // remembered (ever seen) devices
+  params.fReturnUnknown       = TRUE; // devices seen but not yet paired
+  params.fReturnConnected     = TRUE; // currently connected devices
+  params.fIssueInquiry        = FALSE; // KEY: no radio scan, no 10108
+  params.cTimeoutMultiplier   = 0;
+  params.hRadio               = nullptr; // search all radios
 
-  WSAQUERYSETW queryset{};
-  queryset.dwSize = sizeof(WSAQUERYSETW);
-  queryset.dwNameSpace = NS_BTH;
-  HANDLE hLookup{};
-  result = WSALookupServiceBeginW(
-      &queryset, LUP_CONTAINERS | LUP_FLUSHCACHE | LUP_RETURN_NAME | LUP_RETURN_ADDR | LUP_RETURN_TYPE | LUP_RETURN_BLOB | LUP_RES_SERVICE, &hLookup);
-  if(result != 0) {
-    spdlog::error("WSALookupServiceBeginW() failed. (Code={})", WSAGetLastError());
-    WSACleanup();
-    return {};
-  }
+  BLUETOOTH_DEVICE_INFO deviceInfo{};
+  deviceInfo.dwSize = sizeof(deviceInfo);
 
-  SIZE_T resultBufferSize = 8192;
-  auto resultBuffer = static_cast<LPWSAQUERYSETW>(HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, resultBufferSize));
-  if(resultBuffer == nullptr) {
-    spdlog::error("Failed to allocate memory for bluetooth scanning. (Size={})", resultBufferSize);
-    WSALookupServiceEnd(hLookup);
-    WSACleanup();
+  HBLUETOOTH_DEVICE_FIND hFind = BluetoothFindFirstDevice(&params, &deviceInfo);
+  if(!hFind) {
+    DWORD err = GetLastError();
+    if(err != ERROR_NO_MORE_ITEMS)
+      spdlog::error("BluetoothFindFirstDevice() failed. (Code={})", err);
     return {};
   }
 
   auto devices = std::vector<BluetoothDevice>();
-  while(true) {
-    DWORD queryLength = resultBufferSize;
-    result = WSALookupServiceNextW(
-        hLookup, LUP_RETURN_NAME | LUP_RETURN_ADDR | LUP_RETURN_TYPE | LUP_RETURN_BLOB | LUP_RES_SERVICE,
-        &queryLength, resultBuffer);
-    if(result != 0) {
-      auto error = WSAGetLastError();
-      if(error != WSA_E_NO_MORE) {
-        spdlog::error("WSALookupServiceNextW() failed. (Code={}, Len={})", error, queryLength);
-        if(error == WSAEFAULT && queryLength > resultBufferSize) {
-          spdlog::info("WSALookupServiceNextW(): Allocating more memory...");
-          HeapFree(GetProcessHeap(), 0, resultBuffer);
-          resultBuffer = static_cast<LPWSAQUERYSETW>(HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, queryLength));
-          resultBufferSize = queryLength;
-          if(resultBuffer == nullptr) {
-            spdlog::error("Failed to allocate memory for bluetooth scanning. (Size={})", resultBufferSize);
-            break;
-          }
-          continue;
-        }
-      }
-      break;
-    }
-
-    if (resultBuffer->lpcsaBuffer == nullptr || resultBuffer->lpcsaBuffer->RemoteAddr.lpSockaddr == nullptr) {
-      spdlog::warn("Found a bluetooth device with an invalid address. Skipping...");
-      continue;
-    }
-
-    auto pBtAddr = reinterpret_cast<SOCKADDR_BTH *>(resultBuffer->lpcsaBuffer->RemoteAddr.lpSockaddr);
+  do {
     char addr[18]{};
-    ba2str(pBtAddr->btAddr, addr);
-    auto name = StringUtils::FromWideString(resultBuffer->lpszServiceInstanceName);
-    auto address = std::string(addr);
+    ba2str(deviceInfo.Address.ullLong, addr);
+    auto name = StringUtils::FromWideString(deviceInfo.szName);
     if(name.empty())
       name = "Unknown device";
-    devices.push_back({name, address});
-  }
+    devices.push_back({name, std::string(addr)});
+  } while(BluetoothFindNextDevice(hFind, &deviceInfo));
 
-  HeapFree(GetProcessHeap(), 0, resultBuffer);
-  WSALookupServiceEnd(hLookup);
-  WSACleanup();
+  BluetoothFindDeviceClose(hFind);
   return devices;
 }
 

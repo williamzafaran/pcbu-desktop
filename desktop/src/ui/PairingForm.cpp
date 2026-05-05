@@ -1,5 +1,8 @@
 #include "PairingForm.h"
 
+#include <chrono>
+#include <thread>
+
 #include "installer/ServiceInstaller.h"
 #include "platform/BluetoothHelper.h"
 #include "platform/NetworkHelper.h"
@@ -124,13 +127,18 @@ void PairingForm::UpdateStepForm(QObject *viewLoader, QObject *window) {
         if(!m_IsBluetoothScanRunning)
           break;
 
-        spdlog::info("Bluetooth: {} devices.", devices.size());
+        spdlog::info("Bluetooth: {} device(s) found in cache.", devices.size());
         QVariantList uiDevices{};
         for(const auto &device : devices) {
           BluetoothDeviceModel entry = {QString::fromUtf8(device.name), QString::fromUtf8(device.address)};
           uiDevices.append(QVariant::fromValue(entry));
         }
         QMetaObject::invokeMethod(window, "updateBluetoothDeviceList", Q_ARG(QVariant, uiDevices));
+
+        // Cache is stable — refresh every 3 s so the list picks up newly
+        // paired/connected devices without spinning the CPU.
+        for(int i = 0; i < 30 && m_IsBluetoothScanRunning; i++)
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
       BluetoothHelper::StopScan();
     });
