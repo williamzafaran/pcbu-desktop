@@ -191,7 +191,7 @@ void PairingServer::ClientThread(SOCKET clientSocket) {
       PairedDevicesStorage::AddDevice(device);
       spdlog::info("Successfully paired device. (ID={}, Method={})", device.id, PairingMethodUtils::ToString(device.pairingMethod));
 #ifdef WINDOWS
-      if(PlatformHelper::SetDefaultCredProv(m_UIData.userName, "{74A23DE2-B81D-46EC-E129-CD32507ED716}"))
+      if(PlatformHelper::SetDefaultCredProv(m_UIData.userName, "{11B8B3B5-F0E7-4569-B0D1-1C5D2A5E78D9}"))
         spdlog::info("Successfully changed default credential provider for user '{}'.", m_UIData.userName);
       else
         spdlog::error("Failed setting default credential provider for user '{}'.", m_UIData.userName);
