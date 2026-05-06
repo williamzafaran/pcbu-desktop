@@ -480,8 +480,10 @@ HRESULT CUnlockCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIAL
       CoTaskMemFree(pwzProtectedPassword);
     }
   } else {
-    DWORD dwAuthFlags = CRED_PACK_PROTECTED_CREDENTIALS | CRED_PACK_ID_PROVIDER_CREDENTIALS;
-
+    DWORD dwAuthFlags = CRED_PACK_ID_PROVIDER_CREDENTIALS;
+    if(_cpus != CPUS_CREDUI) {
+      dwAuthFlags |= CRED_PACK_PROTECTED_CREDENTIALS;
+    }
     // First get the size of the authentication buffer to allocate
     if(!CredPackAuthenticationBufferW(dwAuthFlags, _pszQualifiedUserName, const_cast<PWSTR>(pwd.c_str()), nullptr, &pcpcs->cbSerialization) &&
        (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {

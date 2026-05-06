@@ -4,6 +4,31 @@
 
 #include "utils/StringUtils.h"
 
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Devices.Bluetooth.Advertisement.h>
+#pragma comment(lib, "windowsapp")
+
+#include <map>
+#include <mutex>
+
+using namespace winrt::Windows::Devices::Bluetooth::Advertisement;
+
+static BluetoothLEAdvertisementWatcher g_watcher{nullptr};
+static std::mutex g_devicesMutex;
+static std::map<uint64_t, BluetoothDevice> g_discoveredDevices;
+static winrt::event_token g_receivedToken;
+
+static void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher const& watcher, BluetoothLEAdvertisementReceivedEventArgs const& args) {
+  std::lock_guard<std::mutex> lock(g_devicesMutex);
+  char addrStr[18]{};
+  BluetoothHelper::ba2str(args.BluetoothAddress(), addrStr);
+  
+  auto name = args.Advertisement().LocalName();
+  std::string deviceName = name.empty() ? "Unknown device" : winrt::to_string(name);
+  
+  g_discoveredDevices[args.BluetoothAddress()] = {deviceName, std::string(addrStr)};
+}
+
 bool BluetoothHelper::IsAvailable() {
   BLUETOOTH_FIND_RADIO_PARAMS params{};
   params.dwSize = sizeof(params);
@@ -17,47 +42,40 @@ bool BluetoothHelper::IsAvailable() {
   return false;
 }
 
-void BluetoothHelper::StartScan() {}
+void BluetoothHelper::StartScan() {
+  try {
+    winrt::init_apartment();
+  } catch(...) {}
 
-void BluetoothHelper::StopScan() {}
+  std::lock_guard<std::mutex> lock(g_devicesMutex);
+  g_discoveredDevices.clear();
 
-std::vector<BluetoothDevice> BluetoothHelper::ScanDevices() {
-  // fIssueInquiry=TRUE is necessary here because this is triggered by the user
-  // manually clicking "Scan" in the UI to pair a NEW device. New devices will
-  // only be discovered if the radio actively scans while the phone is discoverable.
-  BLUETOOTH_DEVICE_SEARCH_PARAMS params{};
-  params.dwSize = sizeof(params);
-  params.fReturnAuthenticated = TRUE; // paired + authenticated devices
-  params.fReturnRemembered    = TRUE; // remembered (ever seen) devices
-  params.fReturnUnknown       = TRUE; // devices seen but not yet paired
-  params.fReturnConnected     = TRUE; // currently connected devices
-  params.fIssueInquiry        = TRUE; // Trigger a physical radio scan for new devices
-  params.cTimeoutMultiplier   = 4;    // ~5.12 seconds scan duration
-  params.hRadio               = nullptr; // search all radios
-
-  BLUETOOTH_DEVICE_INFO deviceInfo{};
-  deviceInfo.dwSize = sizeof(deviceInfo);
-
-  HBLUETOOTH_DEVICE_FIND hFind = BluetoothFindFirstDevice(&params, &deviceInfo);
-  if(!hFind) {
-    DWORD err = GetLastError();
-    if(err != ERROR_NO_MORE_ITEMS)
-      spdlog::error("BluetoothFindFirstDevice() failed. (Code={})", err);
-    return {};
+  if(g_watcher == nullptr) {
+    g_watcher = BluetoothLEAdvertisementWatcher();
+    g_watcher.ScanningMode(BluetoothLEScanningMode::Active);
+    g_receivedToken = g_watcher.Received(OnAdvertisementReceived);
   }
 
-  auto devices = std::vector<BluetoothDevice>();
-  do {
-    char addr[18]{};
-    ba2str(deviceInfo.Address.ullLong, addr);
-    auto name = StringUtils::FromWideString(deviceInfo.szName);
-    if(name.empty())
-      name = "Unknown device";
-    devices.push_back({name, std::string(addr)});
-  } while(BluetoothFindNextDevice(hFind, &deviceInfo));
+  if(g_watcher.Status() != BluetoothLEAdvertisementWatcherStatus::Started) {
+    g_watcher.Start();
+  }
+}
 
-  BluetoothFindDeviceClose(hFind);
-  return devices;
+void BluetoothHelper::StopScan() {
+  if(g_watcher != nullptr) {
+    if(g_watcher.Status() == BluetoothLEAdvertisementWatcherStatus::Started) {
+      g_watcher.Stop();
+    }
+  }
+}
+
+std::vector<BluetoothDevice> BluetoothHelper::ScanDevices() {
+  std::lock_guard<std::mutex> lock(g_devicesMutex);
+  std::vector<BluetoothDevice> result;
+  for(const auto &[addr, device] : g_discoveredDevices) {
+    result.push_back(device);
+  }
+  return result;
 }
 
 bool BluetoothHelper::PairDevice(const BluetoothDevice &device) {
@@ -66,39 +84,16 @@ bool BluetoothHelper::PairDevice(const BluetoothDevice &device) {
   sscanf_s(device.address.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &deviceAddress.rgBytes[5], &deviceAddress.rgBytes[4], &deviceAddress.rgBytes[3],
            &deviceAddress.rgBytes[2], &deviceAddress.rgBytes[1], &deviceAddress.rgBytes[0]);
 
-  // fIssueInquiry=FALSE: avoid radio scan (prevents error 10108 when other BT
-  // devices are connected). fReturnRemembered=TRUE: find phones that are known
-  // but not currently discoverable (screen off, background mode).
-  BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams = {sizeof(searchParams),
-    TRUE,  // fReturnAuthenticated
-    TRUE,  // fReturnRemembered  ← was FALSE, missed screen-off phones
-    TRUE,  // fReturnUnknown
-    TRUE,  // fReturnConnected
-    FALSE, // fIssueInquiry     ← was TRUE, caused radio contention
-    0,
-    nullptr};
-  HBLUETOOTH_DEVICE_FIND searchHandle = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
-  if(!searchHandle) {
-    spdlog::error("Error getting bluetooth search handle. (Code={})", GetLastError());
-    return false;
-  }
-  bool deviceFound = false;
+  deviceInfo.Address = deviceAddress;
+
   bool alreadyAuthenticated = false;
-  do {
-    char devAddr[18]{};
-    char targetAddr[18]{};
-    ba2str(deviceInfo.Address.ullLong, devAddr);
-    ba2str(deviceAddress.ullLong, targetAddr);
-    if(strcmp(devAddr, targetAddr) == 0) {
-      deviceFound = true;
-      alreadyAuthenticated = deviceInfo.fAuthenticated;
-      break;
-    }
-  } while(BluetoothFindNextDevice(searchHandle, &deviceInfo));
-  BluetoothFindDeviceClose(searchHandle);
-  if(!deviceFound) {
-    spdlog::error("Bluetooth device not found.");
-    return false;
+  DWORD getInfoRes = BluetoothGetDeviceInfo(nullptr, &deviceInfo);
+  if(getInfoRes == ERROR_SUCCESS) {
+    alreadyAuthenticated = deviceInfo.fAuthenticated;
+  } else {
+    // Device is completely new to the OS, hasn't been cached yet.
+    // BluetoothAuthenticateDevice will still work.
+    spdlog::info("Device not found in Windows cache. Proceeding with direct authentication.");
   }
 
   // If already paired at the OS level, skip authentication — calling
