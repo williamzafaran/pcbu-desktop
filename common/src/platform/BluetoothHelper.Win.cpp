@@ -22,20 +22,17 @@ void BluetoothHelper::StartScan() {}
 void BluetoothHelper::StopScan() {}
 
 std::vector<BluetoothDevice> BluetoothHelper::ScanDevices() {
-  // Use the Win32 Radio Manager cache API (BluetoothFindFirstDevice) with
-  // fIssueInquiry=FALSE so we never trigger a physical radio scan.
-  // This avoids WSALookupServiceBeginW + LUP_FLUSHCACHE which returns error
-  // 10108 (WSASERVICE_NOT_FOUND) whenever another BT device (mouse, headset,
-  // controller) is actively using the radio, and which also never sees modern
-  // phones whose screens are off (iOS/Android suppress Classic BT beacons).
+  // fIssueInquiry=TRUE is necessary here because this is triggered by the user
+  // manually clicking "Scan" in the UI to pair a NEW device. New devices will
+  // only be discovered if the radio actively scans while the phone is discoverable.
   BLUETOOTH_DEVICE_SEARCH_PARAMS params{};
   params.dwSize = sizeof(params);
   params.fReturnAuthenticated = TRUE; // paired + authenticated devices
   params.fReturnRemembered    = TRUE; // remembered (ever seen) devices
   params.fReturnUnknown       = TRUE; // devices seen but not yet paired
   params.fReturnConnected     = TRUE; // currently connected devices
-  params.fIssueInquiry        = FALSE; // KEY: no radio scan, no 10108
-  params.cTimeoutMultiplier   = 0;
+  params.fIssueInquiry        = TRUE; // Trigger a physical radio scan for new devices
+  params.cTimeoutMultiplier   = 4;    // ~5.12 seconds scan duration
   params.hRadio               = nullptr; // search all radios
 
   BLUETOOTH_DEVICE_INFO deviceInfo{};
