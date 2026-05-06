@@ -23,7 +23,8 @@ enum SAMPLE_FIELD_ID {
   SFI_PASSWORD = 3,
   SFI_SUBMIT_BUTTON = 4,
   SFI_RETRY_BUTTON = 5,
-  SFI_NUM_FIELDS = 6, // Note: if new fields are added, keep NUM_FIELDS last.  This is used as a count of the number of fields
+  SFI_APP_NAME = 6,
+  SFI_NUM_FIELDS = 7, // Note: if new fields are added, keep NUM_FIELDS last.  This is used as a count of the number of fields
 };
 
 // The first value indicates when the tile is displayed (selected, not selected)
@@ -47,4 +48,5 @@ static const FIELD_STATE_PAIR s_rgFieldStatePairs[] = {
     {CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_FOCUSED}, // SFI_PASSWORD
     {CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_NONE},    // SFI_SUBMIT_BUTTON
     {CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_NONE},    // SFI_RETRY_BUTTON
+    {CPFS_HIDDEN, CPFIS_NONE},                      // SFI_APP_NAME
 };

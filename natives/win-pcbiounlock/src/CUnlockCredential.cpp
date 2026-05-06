@@ -89,6 +89,9 @@ HRESULT CUnlockCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, _
     hr = SHStrDupW(StringUtils::ToWideString(I18n::Get("retry")).c_str(), &_rgFieldStrings[SFI_RETRY_BUTTON]);
   }
   if(SUCCEEDED(hr)) {
+    hr = SHStrDupW(L"PC Bio Unlock", &_rgFieldStrings[SFI_APP_NAME]);
+  }
+  if(SUCCEEDED(hr)) {
     _pUnlockListener = new(std::nothrow) CUnlockListener();
     if(_pUnlockListener != nullptr) {
       _pUnlockListener->Initialize(_cpus, _pCredentialProvider, this, userDomain);
@@ -224,7 +227,7 @@ HRESULT CUnlockCredential::GetBitmapValue(DWORD dwFieldID, _Outptr_result_nullon
   *phbmp = nullptr;
 
   if((SFI_TILEIMAGE == dwFieldID)) {
-    HBITMAP hbmp = LoadBitmapW(g_hinst, MAKEINTRESOURCE(IDB_TILE_IMAGE));
+    HBITMAP hbmp = (HBITMAP)LoadImageW(g_hinst, MAKEINTRESOURCEW(IDB_TILE_IMAGE), IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
     if(hbmp != nullptr) {
       hr = S_OK;
       *phbmp = hbmp;

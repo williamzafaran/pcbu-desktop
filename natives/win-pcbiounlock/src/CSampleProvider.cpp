@@ -34,6 +34,7 @@ CSampleProvider::CSampleProvider()
   AddFieldDescriptor(SFI_PASSWORD, CPFT_PASSWORD_TEXT, I18n::Get("password"));
   AddFieldDescriptor(SFI_SUBMIT_BUTTON, CPFT_SUBMIT_BUTTON, "Submit");
   AddFieldDescriptor(SFI_RETRY_BUTTON, CPFT_COMMAND_LINK, I18n::Get("retry"), CPFG_STYLE_LINK_AS_BUTTON);
+  AddFieldDescriptor(SFI_APP_NAME, CPFT_SMALL_TEXT, "App Name", CPFG_CREDENTIAL_PROVIDER_LABEL);
 }
 
 CSampleProvider::~CSampleProvider() {
