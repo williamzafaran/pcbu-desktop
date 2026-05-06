@@ -8,6 +8,8 @@
 //
 //
 
+#include <wincodec.h>
+
 #include "CUnlockCredential.h"
 
 #include "CSampleProvider.h"
@@ -221,14 +223,84 @@ HRESULT CUnlockCredential::GetStringValue(DWORD dwFieldID, _Outptr_result_nullon
   return hr;
 }
 
+// Load PNG from resources using WIC and decode into a pre-multiplied ARGB HBITMAP
+HRESULT LoadPngAsHBitmap(HINSTANCE hInst, int resourceId, HBITMAP* phBmp) {
+  *phBmp = nullptr;
+  HRSRC hResource = FindResourceW(hInst, MAKEINTRESOURCEW(resourceId), L"PNG");
+  if(!hResource) return E_FAIL;
+  
+  DWORD imageSize = SizeofResource(hInst, hResource);
+  HGLOBAL hGlobal = LoadResource(hInst, hResource);
+  if(!hGlobal) return E_FAIL;
+  
+  void* pData = LockResource(hGlobal);
+  if(!pData) return E_FAIL;
+  
+  IStream* pStream = SHCreateMemStream((const BYTE*)pData, imageSize);
+  if(!pStream) return E_OUTOFMEMORY;
+  
+  IWICImagingFactory* pFactory = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFactory));
+  if(SUCCEEDED(hr)) {
+    IWICBitmapDecoder* pDecoder = nullptr;
+    hr = pFactory->CreateDecoderFromStream(pStream, nullptr, WICDecodeMetadataCacheOnDemand, &pDecoder);
+    if(SUCCEEDED(hr)) {
+      IWICBitmapFrameDecode* pFrame = nullptr;
+      hr = pDecoder->GetFrame(0, &pFrame);
+      if(SUCCEEDED(hr)) {
+        IWICFormatConverter* pConverter = nullptr;
+        hr = pFactory->CreateFormatConverter(&pConverter);
+        if(SUCCEEDED(hr)) {
+          // LogonUI requires PBGRA (pre-multiplied alpha) for correct transparency
+          hr = pConverter->Initialize(pFrame, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.f, WICBitmapPaletteTypeCustom);
+          if(SUCCEEDED(hr)) {
+            UINT width, height;
+            pConverter->GetSize(&width, &height);
+            
+            BITMAPINFO bmi = {};
+            bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bmi.bmiHeader.biWidth = width;
+            bmi.bmiHeader.biHeight = -static_cast<LONG>(height); // Top-down
+            bmi.bmiHeader.biPlanes = 1;
+            bmi.bmiHeader.biBitCount = 32;
+            bmi.bmiHeader.biCompression = BI_RGB;
+            
+            void* pBits = nullptr;
+            HBITMAP hBmp = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &pBits, nullptr, 0);
+            if(hBmp) {
+              UINT cbStride = width * 4;
+              UINT cbBufferSize = cbStride * height;
+              hr = pConverter->CopyPixels(nullptr, cbStride, cbBufferSize, static_cast<BYTE*>(pBits));
+              if(SUCCEEDED(hr)) {
+                *phBmp = hBmp;
+              } else {
+                DeleteObject(hBmp);
+              }
+            } else {
+              hr = E_OUTOFMEMORY;
+            }
+          }
+          pConverter->Release();
+        }
+        pFrame->Release();
+      }
+      pDecoder->Release();
+    }
+    pFactory->Release();
+  }
+  pStream->Release();
+  return hr;
+}
+
 // Get the image to show in the user tile
 HRESULT CUnlockCredential::GetBitmapValue(DWORD dwFieldID, _Outptr_result_nullonfailure_ HBITMAP *phbmp) {
   HRESULT hr;
   *phbmp = nullptr;
 
   if((SFI_TILEIMAGE == dwFieldID)) {
-    HBITMAP hbmp = (HBITMAP)LoadImageW(g_hinst, MAKEINTRESOURCEW(IDB_TILE_IMAGE), IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
-    if(hbmp != nullptr) {
+    HBITMAP hbmp = nullptr;
+    hr = LoadPngAsHBitmap(g_hinst, IDB_TILE_IMAGE, &hbmp);
+    if(SUCCEEDED(hr) && hbmp != nullptr) {
       hr = S_OK;
       *phbmp = hbmp;
     } else {
