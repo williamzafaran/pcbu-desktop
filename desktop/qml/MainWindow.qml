@@ -85,18 +85,22 @@ ApplicationWindow {
     }
 
     function updateBluetoothDeviceList(devices) {
-        let selItemName = undefined;
+        let selAddress = undefined;
         try {
-            selItemName = viewLoader.item.selectBTListModel.get(viewLoader.item.selectBTList.currentIndex).name;
+            selAddress = viewLoader.item.selectedAddress;
         } catch (e) {}
-        let selIdx = -1;
-        viewLoader.item.selectBTListModel.clear();
+        
+        viewLoader.item.savedBTListModel.clear();
+        viewLoader.item.foundBTListModel.clear();
+        viewLoader.item.unknownBTListModel.clear();
+        
         for(let i = 0; i < devices.length; i++) {
-            viewLoader.item.selectBTListModel.append({name: devices[i].name, address: devices[i].address});
-            if(devices[i].name === selItemName)
-                selIdx = i;
+            let cat = devices[i].category;
+            let entry = {name: devices[i].name, address: devices[i].address};
+            if(cat === 0) viewLoader.item.savedBTListModel.append(entry);
+            else if(cat === 1) viewLoader.item.foundBTListModel.append(entry);
+            else viewLoader.item.unknownBTListModel.append(entry);
         }
-        viewLoader.item.selectBTList.currentIndex = selIdx;
     }
     function finishBluetoothPairing(isSuccess) {
         if(!isSuccess) {

@@ -26,7 +26,11 @@ static void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher const& watch
   auto name = args.Advertisement().LocalName();
   std::string deviceName = name.empty() ? "Unknown device" : winrt::to_string(name);
   
-  g_discoveredDevices[args.BluetoothAddress()] = {deviceName, std::string(addrStr)};
+  if(deviceName == "Unknown device" && g_discoveredDevices.count(args.BluetoothAddress()) > 0) {
+    // Keep existing real name from cache
+  } else {
+    g_discoveredDevices[args.BluetoothAddress()] = {deviceName, std::string(addrStr)};
+  }
 }
 
 bool BluetoothHelper::IsAvailable() {
@@ -49,6 +53,30 @@ void BluetoothHelper::StartScan() {
 
   std::lock_guard<std::mutex> lock(g_devicesMutex);
   g_discoveredDevices.clear();
+
+  BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams{};
+  searchParams.dwSize = sizeof(searchParams);
+  searchParams.fReturnAuthenticated = TRUE;
+  searchParams.fReturnRemembered = TRUE;
+  searchParams.fReturnUnknown = TRUE;
+  searchParams.fReturnConnected = TRUE;
+  searchParams.fIssueInquiry = FALSE;
+  searchParams.cTimeoutMultiplier = 0;
+  searchParams.hRadio = nullptr;
+
+  BLUETOOTH_DEVICE_INFO deviceInfo = {sizeof(deviceInfo)};
+  HANDLE hFind = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
+  if(hFind) {
+    do {
+      char addrStr[18]{};
+      BluetoothHelper::ba2str(deviceInfo.Address.ullLong, addrStr);
+      std::string name = winrt::to_string(deviceInfo.szName);
+      if(!name.empty() && name != "Unknown device") {
+        g_discoveredDevices[deviceInfo.Address.ullLong] = {name, addrStr};
+      }
+    } while(BluetoothFindNextDevice(hFind, &deviceInfo));
+    BluetoothFindDeviceClose(hFind);
+  }
 
   if(g_watcher == nullptr) {
     g_watcher = BluetoothLEAdvertisementWatcher();

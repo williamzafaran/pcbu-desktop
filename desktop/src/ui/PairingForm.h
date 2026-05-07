@@ -30,8 +30,10 @@ struct BluetoothDeviceModel {
 public:
   QString name{};
   QString address{};
+  int category{};
   Q_PROPERTY(QString name MEMBER name)
   Q_PROPERTY(QString address MEMBER address)
+  Q_PROPERTY(int category MEMBER category)
 };
 
 class PairingForm : public QObject {

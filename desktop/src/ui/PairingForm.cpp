@@ -8,6 +8,7 @@
 #include "platform/NetworkHelper.h"
 #include "platform/PlatformHelper.h"
 #include "storage/AppSettings.h"
+#include "storage/PairedDevicesStorage.h"
 #include "utils/QRUtils.h"
 #include "utils/StringUtils.h"
 
@@ -128,11 +129,34 @@ void PairingForm::UpdateStepForm(QObject *viewLoader, QObject *window) {
           break;
 
         spdlog::info("Bluetooth: {} device(s) found in cache.", devices.size());
+
         QVariantList uiDevices{};
+        auto savedDevices = PairedDevicesStorage::GetDevices();
+        
+        // Category 0: Saved Devices
+        for(const auto &saved : savedDevices) {
+          if(saved.pairingMethod == PairingMethod::BLUETOOTH) {
+            BluetoothDeviceModel entry = {QString::fromUtf8(saved.deviceName.c_str()), QString::fromUtf8(saved.bluetoothAddress.c_str()), 0};
+            uiDevices.append(QVariant::fromValue(entry));
+          }
+        }
+        
+        // Categories 1 & 2: Found & Unknown Devices
         for(const auto &device : devices) {
-          BluetoothDeviceModel entry = {QString::fromUtf8(device.name), QString::fromUtf8(device.address)};
+          bool isSaved = false;
+          for(const auto &saved : savedDevices) {
+            if(saved.pairingMethod == PairingMethod::BLUETOOTH && saved.bluetoothAddress == device.address) {
+              isSaved = true;
+              break;
+            }
+          }
+          if(isSaved) continue;
+          
+          int category = (device.name == "Unknown device" || device.name.empty()) ? 2 : 1;
+          BluetoothDeviceModel entry = {QString::fromUtf8(device.name.c_str()), QString::fromUtf8(device.address.c_str()), category};
           uiDevices.append(QVariant::fromValue(entry));
         }
+
         QMetaObject::invokeMethod(window, "updateBluetoothDeviceList", Q_ARG(QVariant, uiDevices));
 
         // Cache is stable — refresh every 3 s so the list picks up newly
