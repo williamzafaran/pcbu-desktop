@@ -1,4 +1,5 @@
 #include "CUnlockListener.h"
+#include <windows.h>
 
 #include "CSampleProvider.h"
 #include "handler/UnlockHandler.h"
@@ -68,6 +69,22 @@ void CUnlockListener::ListenThread() {
     return device.pairingMethod == PairingMethod::TCP || device.pairingMethod == PairingMethod::CLOUD_TCP;
   });
   if(m_ProviderUsage == CPUS_LOGON || m_ProviderUsage == CPUS_UNLOCK_WORKSTATION) {
+    // Wait for Lock Screen to be dismissed (LogonUI becomes foreground)
+    if(!m_IgnoreWaitKeyPress) {
+      DWORD currentProcessId = GetCurrentProcessId();
+      while(m_IsRunning) {
+        HWND hwndForeground = GetForegroundWindow();
+        if(hwndForeground) {
+          DWORD foregroundProcessId = 0;
+          GetWindowThreadProcessId(hwndForeground, &foregroundProcessId);
+          if(foregroundProcessId == currentProcessId) {
+            break;
+          }
+        }
+        Sleep(100);
+      }
+    }
+
     // Network
     if(waitForNetwork) {
       m_Credential->UpdateMessage(I18n::Get("wait_network"));

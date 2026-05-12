@@ -112,6 +112,16 @@ bool CUnlockCredential::IsSelected() const {
 void CUnlockCredential::SetUnlockData(const UnlockResult &result) {
   _unlockResult = result;
   UpdateMessage(UnlockStateUtils::ToString(result.state));
+
+  if(result.state == UnlockState::SUCCESS) {
+    HKEY hKey;
+    if(RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\LogonUI", 0, KEY_SET_VALUE, &hKey) ==
+       ERROR_SUCCESS) {
+      const wchar_t *guid = L"{11b8b3b5-f0e7-4569-b0d1-1c5d2a5e78d9}";
+      RegSetValueExW(hKey, L"LastLoggedOnProvider", 0, REG_SZ, (const BYTE *)guid, (DWORD)((wcslen(guid) + 1) * sizeof(wchar_t)));
+      RegCloseKey(hKey);
+    }
+  }
 }
 
 void CUnlockCredential::UpdateMessage(const std::string &message) {
